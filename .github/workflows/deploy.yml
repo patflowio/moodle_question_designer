@@ -1,7 +1,7 @@
 name: Deploy to GitHub Pages
 
-# Tests laufen bei jedem Push. Veröffentlicht wird nur vom Standard-Branch
-# des Repositories (z. B. main) oder bei manuellem Start.
+# Tests laufen bei jedem Push. Veröffentlicht wird nur von main
+# oder bei manuellem Start.
 on:
   push:
   workflow_dispatch:
@@ -32,7 +32,7 @@ jobs:
 
   deploy:
     needs: test
-    if: github.event_name == 'workflow_dispatch' || github.ref_name == github.event.repository.default_branch
+    if: github.event_name == 'workflow_dispatch' || github.ref_name == 'main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

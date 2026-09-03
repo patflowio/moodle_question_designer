@@ -29,8 +29,8 @@ gespeicherte Fragen-Sets zusammen: Der Export legt die Fragen in einer eigenen U
 
 ## Bereitstellung über GitHub Pages
 
-Die Seite wird über den Workflow `.github/workflows/deploy.yml` bei jedem Push auf den
-Standard-Branch des Repositories automatisch veröffentlicht (auf anderen Branches laufen nur die Tests).
+Die Seite wird über den Workflow `.github/workflows/deploy.yml` bei jedem Push auf `main`
+automatisch veröffentlicht (auf anderen Branches laufen nur die Tests).
 Einmalig in den Repository-Einstellungen aktivieren:
 
 **Settings → Pages → Build and deployment → Source: „GitHub Actions“**
