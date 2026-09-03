@@ -11,7 +11,9 @@ Alles wird automatisch im Browser-Speicher abgelegt und ist beim nächsten Öffn
 - Export als Moodle-XML, GIFT oder als Sicherungsdatei (JSON) – wahlweise alle oder nur ausgewählte Fragen
 - Import bestehender Moodle-XML-Dateien und eigener Sicherungen
 - Live-Prüfung, ob eine Frage vollständig ist, und Vorschau, wie sie ungefähr in Moodle aussieht
-- Fragen per Drag & Drop sortieren, duplizieren, durchsuchen
+- Fragen per Drag & Drop sortieren, duplizieren, durchsuchen, Löschen mit „Rückgängig“
+- **Tests** als gespeicherte Fragen-Sets: Fragen auswählen und ordnen, als Moodle-XML in eine eigene
+  Unterkategorie exportieren oder als **Papierversion drucken** (optional mit Lösungsblatt)
 
 ## Nutzung
 
@@ -21,13 +23,15 @@ Alles wird automatisch im Browser-Speicher abgelegt und ist beim nächsten Öffn
 4. **Test erstellen** – Aktivität *Test* anlegen, *Fragen → Hinzufügen → aus der Fragensammlung*.
 
 Ein Moodle-Test selbst (Zeitlimit, Bewertung usw.) lässt sich nicht über eine Fragen-Datei importieren;
-er wird in Moodle aus den importierten Fragen zusammengestellt. Mit den Häkchen in der Liste kannst du
-aber genau die Fragen exportieren, die in einen bestimmten Test sollen.
+er wird in Moodle aus den importierten Fragen zusammengestellt. Im Reiter **Tests** stellst du dafür
+gespeicherte Fragen-Sets zusammen: Der Export legt die Fragen in einer eigenen Unterkategorie ab, und
+über „Drucken“ gibt es eine Papierversion mit Lösungsblatt.
 
 ## Bereitstellung über GitHub Pages
 
-Die Seite wird über den Workflow `.github/workflows/deploy.yml` bei jedem Push auf `main`
-automatisch veröffentlicht. Einmalig in den Repository-Einstellungen aktivieren:
+Die Seite wird über den Workflow `.github/workflows/deploy.yml` bei jedem Push auf den
+Standard-Branch des Repositories automatisch veröffentlicht (auf anderen Branches laufen nur die Tests).
+Einmalig in den Repository-Einstellungen aktivieren:
 
 **Settings → Pages → Build and deployment → Source: „GitHub Actions“**
 

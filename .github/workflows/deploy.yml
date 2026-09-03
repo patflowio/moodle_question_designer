@@ -1,8 +1,9 @@
 name: Deploy to GitHub Pages
 
+# Tests laufen bei jedem Push. Veröffentlicht wird nur vom Standard-Branch
+# des Repositories (z. B. main) oder bei manuellem Start.
 on:
   push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -11,11 +12,11 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -29,6 +30,17 @@ jobs:
       - name: Run checks
         run: npm test
 
+  deploy:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' || github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
@@ -37,13 +49,6 @@ jobs:
         with:
           path: .
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

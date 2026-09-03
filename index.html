@@ -30,14 +30,28 @@
 
   <main class="layout">
     <aside class="sidebar">
-      <div class="sidebar-top">
-        <button id="btn-new" class="btn primary block">＋ Neue Frage</button>
-        <input id="search" type="search" placeholder="Fragen durchsuchen …" aria-label="Fragen durchsuchen">
+      <div class="sidebar-tabs" role="tablist">
+        <button class="tab active" data-tab="questions" role="tab">Fragen</button>
+        <button class="tab" data-tab="tests" role="tab">Tests</button>
       </div>
-      <ul id="question-list" class="question-list" aria-label="Fragenliste"></ul>
-      <div class="sidebar-bottom">
-        <label class="check"><input type="checkbox" id="check-all"> <span>Alle auswählen</span></label>
-        <span id="list-count" class="muted"></span>
+      <div id="questions-panel" class="sidebar-panel">
+        <div class="sidebar-top">
+          <button id="btn-new" class="btn primary block">＋ Neue Frage</button>
+          <input id="search" type="search" placeholder="Fragen durchsuchen …" aria-label="Fragen durchsuchen">
+        </div>
+        <ul id="question-list" class="question-list" aria-label="Fragenliste"></ul>
+        <div class="sidebar-bottom">
+          <label class="check"><input type="checkbox" id="check-all"> <span>Alle auswählen</span></label>
+          <span id="list-count" class="muted"></span>
+          <button id="btn-add-to-test" class="btn small" hidden title="Ausgewählte Fragen in einen Test übernehmen">→ In Test</button>
+        </div>
+      </div>
+      <div id="tests-panel" class="sidebar-panel" hidden>
+        <div class="sidebar-top">
+          <button id="btn-new-test" class="btn primary block">＋ Neuer Test</button>
+        </div>
+        <ul id="test-list" class="question-list" aria-label="Testliste"></ul>
+        <div class="sidebar-bottom"><span class="muted small">Ein Test ist eine gespeicherte Auswahl von Fragen.</span></div>
       </div>
     </aside>
 
@@ -57,6 +71,13 @@
         <li><strong>In Moodle importieren:</strong> Im Kurs <em>Mehr → Fragensammlung → Import</em> öffnen, Dateiformat <em>Moodle-XML-Format</em> wählen, Datei hochladen, Import bestätigen.</li>
         <li><strong>Test erstellen:</strong> Im Kurs eine Aktivität <em>Test</em> anlegen, dann <em>Fragen → Hinzufügen → aus der Fragensammlung</em> und die importierten Fragen auswählen.</li>
       </ol>
+
+      <h3>Tests zusammenstellen</h3>
+      <ul>
+        <li>Im Reiter <strong>Tests</strong> legst du einen Test an und fügst Fragen aus dem Katalog hinzu – oder du hakst Fragen in der Liste an und klickst auf „→ In Test“.</li>
+        <li>Ein Test lässt sich als <strong>Moodle-XML</strong> exportieren (die Fragen landen in einer eigenen Unterkategorie) oder als <strong>Papierversion drucken</strong>, wahlweise mit Lösungsblatt.</li>
+        <li>Moodle selbst importiert nur Fragen, keine fertigen Tests. Nach dem Import legst du die Aktivität <em>Test</em> an und fügst die Fragen der Kategorie hinzu.</li>
+      </ul>
 
       <h3>Tipps</h3>
       <ul>

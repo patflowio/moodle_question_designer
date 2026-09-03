@@ -9,7 +9,7 @@ import { h, uid, download, debounce, escapeHtml, textToHtml, stripHtml, slugify,
 const $ = (sel) => document.querySelector(sel);
 
 let state = store.load();
-const ui = { selectedId: null, search: '', checked: new Set(), showAnswerFeedback: false };
+const ui = { tab: 'questions', selectedId: null, selectedTestId: null, search: '', checked: new Set(), showAnswerFeedback: false };
 
 // ---------- Datenzugriff ----------
 function catalog() {
@@ -40,10 +40,13 @@ window.addEventListener('pagehide', () => persist.flush());
 document.addEventListener('visibilitychange', () => document.hidden && persist.flush());
 
 // ---------- Toast / Modale ----------
-function toast(msg, kind = '') {
-  const el = h('div', { class: 'toast ' + kind }, msg);
+function toast(msg, kind = '', action = null) {
+  const el = h('div', { class: 'toast ' + kind }, [
+    h('span', {}, msg),
+    action ? h('button', { type: 'button', onclick: () => { el.remove(); action.onAction(); } }, action.label) : null,
+  ]);
   $('#toast-root').appendChild(el);
-  setTimeout(() => el.remove(), 3500);
+  setTimeout(() => el.remove(), action ? 8000 : 3500);
 }
 
 function openModal({ title, body, actions = [], wide = false, onClose }) {
@@ -190,6 +193,7 @@ function renderHeader() {
 function switchCatalog(id) {
   state.activeId = id;
   ui.selectedId = null;
+  ui.selectedTestId = null;
   ui.checked.clear();
   ui.search = '';
   $('#search').value = '';
@@ -218,6 +222,7 @@ function renderList() {
   const n = all.length;
   const k = ui.checked.size;
   $('#list-count').textContent = k ? `${k} von ${n} ausgewählt` : pluralize(n, 'Frage', 'Fragen');
+  $('#btn-add-to-test').hidden = k === 0;
   const checkAll = $('#check-all');
   checkAll.checked = n > 0 && all.every((q) => ui.checked.has(q.id));
   checkAll.indeterminate = k > 0 && !checkAll.checked;
@@ -325,16 +330,32 @@ function duplicateQuestion(q) {
   toast('Frage dupliziert.');
 }
 
-async function deleteQuestion(q) {
-  if (!(await confirmDialog(`„${q.name || 'Ohne Titel'}“ wirklich löschen?`, { okLabel: 'Löschen', danger: true, title: 'Frage löschen' }))) return;
+function deleteQuestion(q) {
   const list = questions();
   const idx = list.indexOf(q);
+  const memberships = tests().map((t) => [t.id, t.questionIds.indexOf(q.id)]).filter(([, i]) => i >= 0);
   list.splice(idx, 1);
+  tests().forEach((t) => (t.questionIds = t.questionIds.filter((id) => id !== q.id)));
   ui.checked.delete(q.id);
   ui.selectedId = list[Math.min(idx, list.length - 1)]?.id ?? null;
   touch();
   renderAll();
-  toast('Frage gelöscht.');
+  toast(`„${q.name || 'Ohne Titel'}“ gelöscht.`, '', {
+    label: 'Rückgängig',
+    onAction: () => {
+      const cur = questions();
+      if (cur.some((x) => x.id === q.id)) return;
+      cur.splice(Math.min(idx, cur.length), 0, q);
+      memberships.forEach(([tid, i]) => {
+        const t = tests().find((x) => x.id === tid);
+        if (t && !t.questionIds.includes(q.id)) t.questionIds.splice(Math.min(i, t.questionIds.length), 0, q.id);
+      });
+      ui.tab = 'questions';
+      ui.selectedId = q.id;
+      touch();
+      renderAll();
+    },
+  });
 }
 
 function shiftQuestion(q, delta) {
@@ -352,6 +373,10 @@ function shiftQuestion(q, delta) {
 function renderEditor() {
   const root = $('#editor');
   root.innerHTML = '';
+  if (ui.tab === 'tests') {
+    renderTestEditor(root);
+    return;
+  }
   const q = selectedQuestion();
   if (!q) {
     root.appendChild(emptyState());
@@ -752,26 +777,30 @@ function clozePreviewHtml(text) {
 }
 
 // ---------- Export ----------
-function openExport() {
+function openExport(preset = null) {
+  const cat = catalog();
   const all = questions();
   const selected = all.filter((q) => ui.checked.has(q.id));
-  if (!all.length) return toast('Es gibt noch keine Fragen zum Exportieren.', 'error');
-  const cat = catalog();
+  const test = preset?.test || null;
+  const testQs = test ? testQuestions(test) : null;
+  if (!(testQs || all).length) return toast(test ? 'Dieser Test enthält noch keine Fragen.' : 'Es gibt noch keine Fragen zum Exportieren.', 'error');
   let format = 'xml';
-  let scope = selected.length ? 'selected' : 'all';
+  let scope = test ? 'test' : selected.length ? 'selected' : 'all';
   const opts = { skipInvalid: true };
+  const currentList = () => (scope === 'test' ? testQs : scope === 'selected' ? selected : all);
+  const defaultCategory = test ? `${(cat.category || '$course$/top').replace(/\/+$/, '')}/${test.name}` : cat.category || '';
 
   const radio = (name, value, current, title, desc, onChange, disabled = false) => {
     const input = h('input', { type: 'radio', name, value, checked: value === current, disabled });
     input.addEventListener('change', () => input.checked && onChange(value));
     return h('label', { class: 'choice' }, [input, h('div', {}, [h('div', { class: 'choice-title' }, title), desc ? h('div', { class: 'choice-desc' }, desc) : null])]);
   };
-  const categoryInput = h('input', { type: 'text', value: cat.category || '' });
-  categoryInput.addEventListener('input', () => { cat.category = categoryInput.value; touch(); });
-  const filenameInput = h('input', { type: 'text', value: slugify(cat.name) });
+  const categoryInput = h('input', { type: 'text', value: defaultCategory });
+  if (!test) categoryInput.addEventListener('input', () => { cat.category = categoryInput.value; touch(); });
+  const filenameInput = h('input', { type: 'text', value: slugify(test ? test.name : cat.name) });
   const summary = h('div', { class: 'banner info' });
   const update = () => {
-    const list = scope === 'selected' ? selected : all;
+    const list = currentList();
     const invalid = list.filter((q) => validateQuestion(q).length);
     const cloze = format === 'gift' ? list.filter((q) => q.type === 'cloze') : [];
     summary.innerHTML = '';
@@ -785,7 +814,17 @@ function openExport() {
   const skipInput = h('input', { type: 'checkbox', checked: true });
   skipInput.addEventListener('change', () => { opts.skipInvalid = skipInput.checked; update(); });
   const skipField = h('div', { class: 'field' }, h('label', { class: 'check' }, [skipInput, h('span', {}, 'Unvollständige Fragen überspringen')]));
-  const categoryField = field('Kategorie in Moodle', categoryInput, 'Wird beim Import als Fragenkategorie angelegt. <code>$course$/top/</code> steht für die oberste Ebene des Kurses; mit „/“ lassen sich Unterkategorien bilden.');
+  const categoryField = field('Kategorie in Moodle', categoryInput, test
+    ? 'Die Fragen dieses Tests landen beim Import in dieser (Unter-)Kategorie, sodass sie in Moodle leicht in einen Test zu übernehmen sind.'
+    : 'Wird beim Import als Fragenkategorie angelegt. <code>$course$/top/</code> steht für die oberste Ebene des Kurses; mit „/“ lassen sich Unterkategorien bilden.');
+
+  const scopeField = test
+    ? h('div', { class: 'field' }, [h('div', { class: 'field-label' }, 'Umfang'), h('div', { class: 'banner info' }, `Test „${test.name}“ mit ${pluralize(testQs.length, 'Frage', 'Fragen')} in der Reihenfolge des Tests.`)])
+    : h('div', { class: 'field' }, [
+        h('div', { class: 'field-label' }, 'Umfang'),
+        radio('scope', 'all', scope, `Alle ${pluralize(all.length, 'Frage', 'Fragen')}`, null, (v) => { scope = v; update(); }),
+        radio('scope', 'selected', scope, `Nur ausgewählte (${selected.length})`, selected.length ? 'Die in der Liste angehakten Fragen.' : 'Hake Fragen in der Liste an, um eine Auswahl zu exportieren.', (v) => { scope = v; update(); }, !selected.length),
+      ]);
 
   const body = h('div', {}, [
     h('div', { class: 'field' }, [
@@ -794,11 +833,7 @@ function openExport() {
       radio('fmt', 'gift', format, 'GIFT', 'Einfaches Textformat, ebenfalls von Moodle importierbar. Keine Lückentext-Fragen.', (v) => { format = v; update(); }),
       radio('fmt', 'json', format, 'Sicherung (JSON)', 'Zum Aufbewahren oder zum Weiterbearbeiten auf einem anderen Gerät. Nur für dieses Tool.', (v) => { format = v; update(); }),
     ]),
-    h('div', { class: 'field' }, [
-      h('div', { class: 'field-label' }, 'Umfang'),
-      radio('scope', 'all', scope, `Alle ${pluralize(all.length, 'Frage', 'Fragen')}`, null, (v) => { scope = v; update(); }),
-      radio('scope', 'selected', scope, `Nur ausgewählte (${selected.length})`, selected.length ? 'Die in der Liste angehakten Fragen.' : 'Hake Fragen in der Liste an, um eine Auswahl zu exportieren.', (v) => { scope = v; update(); }, !selected.length),
-    ]),
+    scopeField,
     categoryField,
     skipField,
     field('Dateiname', filenameInput),
@@ -807,24 +842,25 @@ function openExport() {
   update();
 
   openModal({
-    title: 'Exportieren',
+    title: test ? `Test „${test.name}“ exportieren` : 'Exportieren',
     body,
     actions: [
       { label: 'Abbrechen', onClick: (c) => c() },
       {
         label: 'Herunterladen', class: 'primary',
         onClick: (close) => {
-          let list = scope === 'selected' ? selected : all;
+          let list = currentList();
           const base = (filenameInput.value.trim() || slugify(cat.name)).replace(/\.(xml|txt|gift|json)$/i, '');
+          const category = categoryInput.value.trim();
           if (format === 'json') {
-            download(base + '.json', store.makeBackup([{ ...cat, questions: list }]), 'application/json');
+            download(base + '.json', store.makeBackup([{ ...cat, questions: list, tests: test ? [test] : cat.tests }]), 'application/json');
           } else {
             if (opts.skipInvalid) list = list.filter((q) => !validateQuestion(q).length);
             if (!list.length) return toast('Keine exportfähigen Fragen.', 'error');
             if (format === 'xml') {
-              download(base + '.xml', exportMoodleXml(list, { category: cat.category }), 'application/xml');
+              download(base + '.xml', exportMoodleXml(list, { category }), 'application/xml');
             } else {
-              const { text, skipped } = exportGift(list, { category: cat.category });
+              const { text, skipped } = exportGift(list, { category });
               if (skipped.length === list.length) return toast('Keine Frage konnte als GIFT exportiert werden.', 'error');
               download(base + '.gift.txt', text, 'text/plain');
             }
@@ -961,10 +997,412 @@ function openTypeChooser() {
   close = openModal({ title: 'Neue Frage – Typ wählen', body: typeGrid((t) => { close(); addQuestion(t); }), wide: true });
 }
 
+// ---------- Tests (gespeicherte Fragen-Sets) ----------
+function tests() {
+  const c = catalog();
+  if (!Array.isArray(c.tests)) c.tests = [];
+  return c.tests;
+}
+function selectedTest() {
+  return tests().find((t) => t.id === ui.selectedTestId) || null;
+}
+function testQuestions(t) {
+  const byId = new Map(questions().map((q) => [q.id, q]));
+  return t.questionIds.map((id) => byId.get(id)).filter(Boolean);
+}
+function testPoints(t) {
+  return testQuestions(t).reduce((s, q) => s + (q.type === 'description' ? 0 : Number(q.defaultGrade) || 0), 0);
+}
+function formatPoints(n) {
+  return String(Math.round((Number(n) || 0) * 100) / 100).replace('.', ',');
+}
+
+function newTest(name, questionIds = []) {
+  const t = { id: uid(), name, description: '', questionIds: [...new Set(questionIds)], createdAt: Date.now() };
+  tests().push(t);
+  ui.selectedTestId = t.id;
+  ui.tab = 'tests';
+  touch();
+  renderAll();
+  return t;
+}
+
+async function createTestDialog(questionIds = []) {
+  const name = await promptDialog('Neuer Test', 'Name des Tests', `Test ${tests().length + 1}`);
+  if (!name) return null;
+  const t = newTest(name, questionIds);
+  toast(`Test „${name}“ angelegt${questionIds.length ? ` mit ${pluralize(questionIds.length, 'Frage', 'Fragen')}` : ''}.`, 'success');
+  return t;
+}
+
+async function deleteTest(t) {
+  if (!(await confirmDialog(`Test „${t.name}“ löschen? Die Fragen selbst bleiben im Katalog erhalten.`, { okLabel: 'Löschen', danger: true, title: 'Test löschen' }))) return;
+  catalog().tests = tests().filter((x) => x.id !== t.id);
+  ui.selectedTestId = null;
+  touch();
+  renderAll();
+  toast('Test gelöscht.');
+}
+
+function moveInTest(t, idx, delta) {
+  const to = idx + delta;
+  if (to < 0 || to >= t.questionIds.length) return;
+  const [id] = t.questionIds.splice(idx, 1);
+  t.questionIds.splice(to, 0, id);
+  touch();
+}
+
+function renderSidebar() {
+  document.querySelectorAll('.sidebar-tabs .tab').forEach((b) => {
+    const active = b.dataset.tab === ui.tab;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  $('#questions-panel').hidden = ui.tab !== 'questions';
+  $('#tests-panel').hidden = ui.tab !== 'tests';
+  if (ui.tab === 'questions') renderList();
+  else renderTestList();
+}
+
+function renderTestList() {
+  const list = $('#test-list');
+  list.innerHTML = '';
+  const ts = tests();
+  if (!ts.length) list.appendChild(h('li', { class: 'list-empty' }, 'Noch keine Tests. Lege einen Test an und füge Fragen aus dem Katalog hinzu.'));
+  ts.forEach((t) => {
+    const qs = testQuestions(t);
+    list.appendChild(
+      h('li', { class: 'q-item' + (t.id === ui.selectedTestId ? ' selected' : ''), onclick: () => { ui.selectedTestId = t.id; renderSidebar(); renderEditor(); } }, [
+        h('span', { class: 'q-badge' }, 'TEST'),
+        h('span', { class: 'q-title' }, t.name),
+        h('span', { class: 'muted small', style: { whiteSpace: 'nowrap' } }, `${qs.length} · ${formatPoints(testPoints(t))} P.`),
+      ]),
+    );
+  });
+}
+
+function renderTestEditor(root) {
+  const t = selectedTest();
+  if (!t) {
+    root.appendChild(h('div', { class: 'empty-state' }, [
+      h('h2', {}, tests().length ? 'Test auswählen oder neuen Test anlegen' : 'Tests zusammenstellen'),
+      h('p', {}, 'Ein Test ist eine gespeicherte Auswahl und Reihenfolge von Fragen aus diesem Katalog. Du kannst ihn als Moodle-XML exportieren oder als Papierversion drucken – wahlweise mit Lösungsblatt.'),
+      h('button', { class: 'btn primary', onclick: () => createTestDialog() }, '＋ Neuer Test'),
+    ]));
+    return;
+  }
+  const inner = h('div', { class: 'editor-inner' });
+  const heading = h('h2', {}, t.name);
+  const exportBtn = h('button', { class: 'btn small primary', onclick: () => openExport({ test: t }) }, 'Exportieren');
+  const printBtn = h('button', { class: 'btn small', onclick: () => openPrintDialog(t) }, 'Drucken');
+  inner.appendChild(h('div', { class: 'editor-head' }, [
+    h('span', { class: 'type-pill' }, '📝 Test'),
+    heading,
+    h('span', { class: 'spacer' }),
+    printBtn,
+    exportBtn,
+    h('button', { class: 'btn small danger', onclick: () => deleteTest(t) }, 'Löschen'),
+  ]));
+  inner.appendChild(h('div', { class: 'card' }, [
+    h('h3', {}, 'Test'),
+    field('Name', textInput(t, 'name', { placeholder: 'z. B. Klassenarbeit Kapitel 3' }, { onChange: () => { heading.textContent = t.name || 'Test'; renderTestList(); } }), 'Wird beim Export als Unterkategorie in Moodle und als Überschrift im Ausdruck verwendet.'),
+    field('Hinweise für Teilnehmende', textArea(t, 'description', { rows: 3, placeholder: 'z. B. Bearbeitungszeit, erlaubte Hilfsmittel – erscheint im Ausdruck' }), null, { optional: true }),
+  ]));
+
+  const summaryText = () => `${pluralize(testQuestions(t).length, 'Frage', 'Fragen')} · ${formatPoints(testPoints(t))} Punkte gesamt`;
+  const summary = h('span', { class: 'muted' }, summaryText());
+  const warnBox = h('div', {});
+  const listEl = h('div', { class: 'answers' });
+  const refresh = () => {
+    const cur = testQuestions(t);
+    listEl.innerHTML = '';
+    cur.forEach((q, i) => {
+      const problems = validateQuestion(q);
+      listEl.appendChild(h('div', { class: 'test-q-row' }, [
+        h('span', { class: 'q-num' }, String(i + 1)),
+        h('span', { class: 'q-badge', title: TYPES[q.type].label }, TYPES[q.type].short),
+        h('a', { class: 'q-title' + (q.name ? '' : ' empty'), href: '#', title: 'Frage bearbeiten', onclick: (e) => { e.preventDefault(); ui.tab = 'questions'; ui.selectedId = q.id; renderAll(); } }, q.name || 'Ohne Titel'),
+        h('span', { class: 'q-warn', title: problems.join('\n') }, problems.length ? '!' : ''),
+        h('span', { class: 'muted small' }, q.type === 'description' ? '–' : formatPoints(q.defaultGrade) + ' P.'),
+        h('button', { class: 'btn small', type: 'button', onclick: () => { moveInTest(t, i, -1); refresh(); }, disabled: i === 0, title: 'Nach oben' }, '↑'),
+        h('button', { class: 'btn small', type: 'button', onclick: () => { moveInTest(t, i, 1); refresh(); }, disabled: i === cur.length - 1, title: 'Nach unten' }, '↓'),
+        removeButton(() => { t.questionIds = t.questionIds.filter((id) => id !== q.id); touch(); refresh(); }),
+      ]));
+    });
+    if (!cur.length) listEl.appendChild(h('div', { class: 'list-empty' }, 'Noch keine Fragen im Test.'));
+    const invalid = cur.filter((q) => validateQuestion(q).length).length;
+    warnBox.innerHTML = '';
+    if (invalid) warnBox.appendChild(h('div', { class: 'banner warn' }, `Unvollständige Fragen im Test: ${invalid} (mit „!“ markiert). Sie werden beim Export übersprungen.`));
+    summary.textContent = summaryText();
+    exportBtn.disabled = printBtn.disabled = !cur.length;
+    renderTestList();
+  };
+  refresh();
+  inner.appendChild(h('div', { class: 'card' }, [
+    h('h3', {}, ['Fragen in diesem Test', summary]),
+    warnBox,
+    listEl,
+    h('button', { class: 'btn small', type: 'button', onclick: () => openAddQuestionsDialog(t, refresh) }, '＋ Fragen hinzufügen'),
+    h('div', { class: 'hint' }, 'Die Reihenfolge gilt für den Ausdruck. In Moodle stellst du den Test nach dem Import aus den Fragen der Kategorie zusammen.'),
+  ]));
+  root.appendChild(inner);
+}
+
+function openAddQuestionsDialog(t, done) {
+  const available = questions().filter((q) => !t.questionIds.includes(q.id));
+  if (!available.length) return toast(questions().length ? 'Alle Fragen des Katalogs sind bereits im Test.' : 'Der Katalog enthält noch keine Fragen.');
+  const picked = new Set();
+  const search = h('input', { type: 'search', placeholder: 'Fragen durchsuchen …' });
+  const listEl = h('div', { class: 'pick-list' });
+  let addBtn = null;
+  const syncBtn = () => { if (addBtn) { addBtn.textContent = `Hinzufügen (${picked.size})`; addBtn.disabled = !picked.size; } };
+  const rebuild = () => {
+    const s = search.value.trim().toLowerCase();
+    listEl.innerHTML = '';
+    available
+      .filter((q) => !s || (q.name + ' ' + stripHtml(q.text)).toLowerCase().includes(s))
+      .forEach((q) => {
+        const cb = h('input', { type: 'checkbox', checked: picked.has(q.id) });
+        cb.addEventListener('change', () => { cb.checked ? picked.add(q.id) : picked.delete(q.id); syncBtn(); });
+        listEl.appendChild(h('label', { class: 'pick-row' }, [
+          cb,
+          h('span', { class: 'q-badge', title: TYPES[q.type].label }, TYPES[q.type].short),
+          h('span', { class: 'q-title' + (q.name ? '' : ' empty') }, q.name || 'Ohne Titel'),
+          h('span', { class: 'muted small' }, stripHtml(q.text).slice(0, 80)),
+        ]));
+      });
+    if (!listEl.children.length) listEl.appendChild(h('div', { class: 'list-empty' }, 'Keine Treffer.'));
+  };
+  search.addEventListener('input', rebuild);
+  rebuild();
+  const selectAll = h('button', { class: 'btn', type: 'button', onclick: () => { available.forEach((q) => picked.add(q.id)); rebuild(); syncBtn(); } }, 'Alle');
+  openModal({
+    title: `Fragen zu „${t.name}“ hinzufügen`,
+    wide: true,
+    body: h('div', {}, [h('div', { class: 'pick-head' }, [search, selectAll]), listEl]),
+    actions: [
+      { label: 'Abbrechen', onClick: (c) => c() },
+      { label: 'Hinzufügen (0)', class: 'primary', disabled: true, onClick: (c) => {
+        const ids = available.filter((q) => picked.has(q.id)).map((q) => q.id);
+        t.questionIds.push(...ids);
+        touch();
+        c();
+        done();
+        toast(`${pluralize(ids.length, 'Frage', 'Fragen')} hinzugefügt.`, 'success');
+      } },
+    ],
+  });
+  addBtn = $('#modal-root .modal-foot button.primary');
+  search.focus();
+}
+
+async function addCheckedToTest() {
+  const ids = questions().filter((q) => ui.checked.has(q.id)).map((q) => q.id);
+  if (!ids.length) return;
+  const ts = tests();
+  if (!ts.length) {
+    if (await createTestDialog(ids)) ui.checked.clear();
+    return;
+  }
+  const sel = h('select', {}, [...ts.map((t) => h('option', { value: t.id }, t.name)), h('option', { value: '__new' }, '＋ Neuer Test …')]);
+  openModal({
+    title: `${pluralize(ids.length, 'Frage', 'Fragen')} in Test übernehmen`,
+    body: field('Test', sel),
+    actions: [
+      { label: 'Abbrechen', onClick: (c) => c() },
+      { label: 'Übernehmen', class: 'primary', onClick: async (c) => {
+        c();
+        if (sel.value === '__new') {
+          if (await createTestDialog(ids)) ui.checked.clear();
+          return;
+        }
+        const t = ts.find((x) => x.id === sel.value);
+        const added = ids.filter((id) => !t.questionIds.includes(id));
+        t.questionIds.push(...added);
+        ui.checked.clear();
+        ui.selectedTestId = t.id;
+        ui.tab = 'tests';
+        touch();
+        renderAll();
+        toast(added.length ? `${pluralize(added.length, 'Frage', 'Fragen')} zu „${t.name}“ hinzugefügt.` : 'Diese Fragen sind bereits im Test.', added.length ? 'success' : '');
+      } },
+    ],
+  });
+}
+
+// ---------- Drucken ----------
+function openPrintDialog(t) {
+  const o = { nameField: true, points: true, solutions: true };
+  const cb = (key, label) => {
+    const i = h('input', { type: 'checkbox', checked: o[key] });
+    i.addEventListener('change', () => (o[key] = i.checked));
+    return h('label', { class: 'check', style: { display: 'flex', marginBottom: '0.6rem' } }, [i, h('span', {}, label)]);
+  };
+  openModal({
+    title: 'Papierversion drucken',
+    body: h('div', {}, [
+      h('p', {}, 'Öffnet eine Druckansicht in einem neuen Tab. Dort kannst du drucken oder als PDF speichern.'),
+      cb('nameField', 'Felder für Name und Datum'),
+      cb('points', 'Punkte je Frage anzeigen'),
+      cb('solutions', 'Lösungsblatt anhängen (auf eigener Seite)'),
+    ]),
+    actions: [
+      { label: 'Abbrechen', onClick: (c) => c() },
+      { label: 'Druckansicht öffnen', class: 'primary', onClick: (c) => { c(); printTest(t, o); } },
+    ],
+  });
+}
+
+function printTest(t, o) {
+  const win = window.open('', '_blank');
+  if (!win) return toast('Der Browser hat das neue Fenster blockiert. Bitte Pop-ups für diese Seite erlauben.', 'error');
+  win.document.open();
+  win.document.write(printHtml(t, testQuestions(t), o));
+  win.document.close();
+}
+
+function answerLabel(style, i) {
+  if (style === 'none') return '';
+  if (style === 'abc') return String.fromCharCode(97 + i) + ') ';
+  if (style === 'ABCD') return String.fromCharCode(65 + i) + ') ';
+  if (style === '123') return i + 1 + ') ';
+  const roman = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x'][i] || String(i + 1);
+  return (style === 'IIII' ? roman.toUpperCase() : roman) + ') ';
+}
+
+const PRINT_CSS = `
+  @page { margin: 18mm 16mm; }
+  body { font-family: Georgia, "Times New Roman", serif; font-size: 12pt; line-height: 1.45; color: #111; max-width: 180mm; margin: 0 auto; padding: 12mm 0; }
+  header { border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 18px; }
+  h1 { font-size: 20pt; margin: 0 0 4px; }
+  .meta { color: #444; font-size: 10.5pt; }
+  .desc { margin-top: 8px; }
+  .namefield { display: flex; justify-content: space-between; gap: 16px; margin-top: 14px; font-size: 11pt; }
+  section.q { margin: 0 0 18px; page-break-inside: avoid; break-inside: avoid; }
+  .qhead { display: flex; justify-content: space-between; font-weight: bold; }
+  .pts { font-weight: normal; color: #444; font-size: 10.5pt; }
+  .qtext p { margin: 2px 0 6px; }
+  ul.opts { list-style: none; padding: 0; margin: 4px 0 0; }
+  ul.opts li { margin: 3px 0; display: flex; gap: 8px; align-items: baseline; }
+  ul.opts.inline { display: flex; gap: 28px; }
+  .box { display: inline-block; width: 12px; height: 12px; border: 1.5px solid #111; border-radius: 2px; flex: none; position: relative; top: 1px; }
+  .line { border-bottom: 1px solid #111; height: 22px; margin-top: 8px; }
+  .line.short { width: 40%; }
+  .lines { margin-top: 8px; background: repeating-linear-gradient(to bottom, transparent 0, transparent 23px, #999 23px, #999 24px); }
+  .gap { display: inline-block; min-width: 90px; border-bottom: 1px solid #111; }
+  table.match { border-collapse: collapse; margin-top: 6px; }
+  table.match td { padding: 4px 10px 4px 0; vertical-align: top; }
+  table.match td.blank { width: 130px; border-bottom: 1px solid #111; }
+  .choices { margin-top: 6px; font-size: 11pt; color: #333; }
+  .solutions { page-break-before: always; break-before: page; }
+  .solutions h2 { font-size: 16pt; border-bottom: 2px solid #111; padding-bottom: 6px; }
+  .solutions li { margin-bottom: 6px; }
+  .solutions .qn { color: #666; font-size: 10.5pt; }
+  .hint { color: #555; font-style: italic; font-size: 10.5pt; }
+  img { max-width: 100%; }
+  @media print { body { padding: 0; } }
+`;
+
+function printHtml(t, qs, o) {
+  const cat = catalog();
+  let n = 0;
+  const blocks = qs.map((q) => {
+    const isDesc = q.type === 'description';
+    if (!isDesc) n++;
+    const pts = !isDesc && o.points ? `<span class="pts">${formatPoints(q.defaultGrade)} ${Number(q.defaultGrade) === 1 ? 'Punkt' : 'Punkte'}</span>` : '';
+    const head = isDesc ? '' : `<div class="qhead"><span>Aufgabe ${n}</span>${pts}</div>`;
+    const text = q.type === 'cloze' ? printCloze(q.text) : textToHtml(q.text);
+    return `<section class="q">${head}<div class="qtext">${text}</div>${printBody(q)}</section>`;
+  });
+  const solutions = o.solutions
+    ? `<section class="solutions"><h2>Lösungen – ${escapeHtml(t.name)}</h2><ol>${qs.filter((q) => q.type !== 'description').map((q) => `<li>${solutionHtml(q)}</li>`).join('')}</ol></section>`
+    : '';
+  const meta = [escapeHtml(cat.name), pluralize(n, 'Aufgabe', 'Aufgaben'), o.points ? `${formatPoints(testPoints(t))} Punkte` : ''].filter(Boolean).join(' · ');
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${escapeHtml(t.name)}</title><style>${PRINT_CSS}</style></head><body>
+<header><h1>${escapeHtml(t.name)}</h1><div class="meta">${meta}</div>${t.description ? `<div class="desc">${textToHtml(t.description)}</div>` : ''}${o.nameField ? '<div class="namefield"><span>Name: ________________________________</span><span>Datum: ________________</span></div>' : ''}</header>
+${blocks.join('\n')}
+${solutions}
+<script>window.addEventListener('load', function () { setTimeout(function () { window.print(); }, 300); });</script>
+</body></html>`;
+}
+
+function printCloze(text) {
+  return textToHtml(text).replace(/\{\d*:[A-Z_]+:[^}]*\}/g, '<span class="gap">&nbsp;</span>');
+}
+
+function inline(html) {
+  return textToHtml(html).replace(/^<p>|<\/p>$/g, '').replace(/<\/p>\s*<p>/g, '<br>');
+}
+
+function printBody(q) {
+  switch (q.type) {
+    case 'multichoice': {
+      const answers = q.answers.filter((a) => a.text.trim());
+      return (q.single ? '' : '<div class="hint">Mehrere Antworten können richtig sein.</div>') +
+        `<ul class="opts">${answers.map((a, i) => `<li><span class="box"></span><span>${answerLabel(q.numbering, i)}${inline(a.text)}</span></li>`).join('')}</ul>`;
+    }
+    case 'truefalse':
+      return '<ul class="opts inline"><li><span class="box"></span> Wahr</li><li><span class="box"></span> Falsch</li></ul>';
+    case 'shortanswer':
+      return '<div class="line"></div>';
+    case 'numerical':
+      return '<div class="line short"></div>';
+    case 'matching': {
+      const pairs = q.pairs.filter((p) => stripHtml(p.question));
+      const choices = [...new Set(q.pairs.map((p) => p.answer.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
+      return `<table class="match">${pairs.map((p) => `<tr><td>${inline(p.question)}</td><td class="blank"></td></tr>`).join('')}</table>` +
+        `<div class="choices">Auswahl: ${choices.map((c, i) => `${String.fromCharCode(65 + i)}) ${escapeHtml(c)}`).join(' &nbsp; ')}</div>`;
+    }
+    case 'essay': {
+      const lines = Math.min(Math.max(Number(q.responseFieldLines) || 10, 4), 30);
+      return `<div class="lines" style="height:${lines * 24}px"></div>`;
+    }
+    default:
+      return '';
+  }
+}
+
+function solutionHtml(q) {
+  const title = `<span class="qn">${escapeHtml(q.name || '')}</span> `;
+  switch (q.type) {
+    case 'multichoice': {
+      const answers = q.answers.filter((a) => a.text.trim());
+      const fr = multichoiceFractions({ ...q, answers });
+      return title + answers.map((a, i) => (fr[i] > 0 ? `${answerLabel(q.numbering, i)}${inline(a.text)}` : null)).filter(Boolean).join(', ');
+    }
+    case 'truefalse':
+      return title + (q.correctAnswer === false ? 'Falsch' : 'Wahr');
+    case 'shortanswer': {
+      const full = q.answers.filter((a) => a.text.trim() && Number(a.fraction) === 100).map((a) => escapeHtml(a.text));
+      const partial = q.answers.filter((a) => a.text.trim() && Number(a.fraction) > 0 && Number(a.fraction) < 100).map((a) => `${escapeHtml(a.text)} (${formatFraction(a.fraction)} %)`);
+      return title + full.join(' / ') + (partial.length ? ` <span class="hint">teilweise: ${partial.join(', ')}</span>` : '');
+    }
+    case 'numerical':
+      return title + q.answers.filter((a) => String(a.text).trim() && Number(a.fraction) > 0).map((a) => `${escapeHtml(a.text)}${Number(a.tolerance) ? ' ± ' + escapeHtml(String(a.tolerance)) : ''}`).join(' / ');
+    case 'matching': {
+      const choices = [...new Set(q.pairs.map((p) => p.answer.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
+      return title + q.pairs.filter((p) => stripHtml(p.question)).map((p) => `${inline(p.question)} → ${String.fromCharCode(65 + choices.indexOf(p.answer.trim()))} (${escapeHtml(p.answer.trim())})`).join('; ');
+    }
+    case 'essay':
+      return title + (q.graderInfo ? inline(q.graderInfo) : '<span class="hint">Freitext – manuelle Bewertung</span>');
+    case 'cloze': {
+      const gaps = [];
+      String(q.text || '').replace(/\{\d*:[A-Z_]+:([^}]*)\}/g, (m, body) => {
+        const best = body.split('~').map((s) => s.trim()).filter((s) => s.startsWith('=') || s.startsWith('%100%'))[0] || body.split('~')[0];
+        gaps.push(escapeHtml(best.replace(/^(=|%100%)/, '').replace(/#.*$/, '').trim()));
+        return m;
+      });
+      return title + gaps.map((g, i) => `Lücke ${i + 1}: ${g}`).join('; ');
+    }
+    default:
+      return title;
+  }
+}
+
 // ---------- Start ----------
 function renderAll() {
   renderHeader();
-  renderList();
+  renderSidebar();
   renderEditor();
 }
 
@@ -979,6 +1417,12 @@ function init() {
   $('#btn-export').addEventListener('click', openExport);
   $('#btn-help').addEventListener('click', openHelp);
   $('#btn-new').addEventListener('click', openTypeChooser);
+  $('#btn-new-test').addEventListener('click', () => createTestDialog());
+  $('#btn-add-to-test').addEventListener('click', addCheckedToTest);
+  document.querySelectorAll('.sidebar-tabs .tab').forEach((b) => b.addEventListener('click', () => {
+    ui.tab = b.dataset.tab;
+    renderAll();
+  }));
   $('#search').addEventListener('input', (e) => { ui.search = e.target.value; renderList(); });
   $('#check-all').addEventListener('change', (e) => {
     ui.checked.clear();

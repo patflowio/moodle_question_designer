@@ -12,6 +12,7 @@ export function newCatalog(name = 'Mein Fragenkatalog') {
     name,
     category: '$course$/top/' + name,
     questions: [],
+    tests: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -50,6 +51,18 @@ export function normalizeCatalog(c) {
     ...c,
     id: c?.id || base.id,
     questions: Array.isArray(c?.questions) ? c.questions.map(normalizeQuestion) : [],
+    tests: Array.isArray(c?.tests) ? c.tests.map(normalizeTest).filter(Boolean) : [],
+  };
+}
+
+export function normalizeTest(t) {
+  if (!t || typeof t !== 'object') return null;
+  return {
+    id: t.id || uid(),
+    name: String(t.name || 'Test'),
+    description: String(t.description || ''),
+    questionIds: Array.isArray(t.questionIds) ? t.questionIds.filter((id) => typeof id === 'string') : [],
+    createdAt: t.createdAt || Date.now(),
   };
 }
 
