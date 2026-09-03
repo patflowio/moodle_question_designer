@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Moodle Fragen-Designer</title>
+  <meta name="description" content="Moodle-Fragen und Tests im Browser gestalten und als Moodle-XML oder GIFT exportieren. Alles wird lokal im Browser gespeichert.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23f97316'/%3E%3Ctext x='32' y='44' font-size='34' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='700'%3E%3F%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon">?</span>
+      <span class="brand-name">Moodle Fragen-Designer</span>
+    </div>
+    <div class="catalog-bar">
+      <label for="catalog-select" class="sr-only">Fragenkatalog</label>
+      <select id="catalog-select" title="Fragenkatalog wechseln"></select>
+      <button id="btn-catalog-settings" class="btn icon" title="Katalog-Einstellungen" aria-label="Katalog-Einstellungen">⚙</button>
+      <button id="btn-catalog-new" class="btn icon" title="Neuen Katalog anlegen" aria-label="Neuen Katalog anlegen">＋</button>
+    </div>
+    <div class="topbar-right">
+      <span id="save-status" class="save-status" data-state="saved"><span class="dot"></span><span class="label">Gespeichert</span></span>
+      <button id="btn-import" class="btn">Importieren</button>
+      <button id="btn-export" class="btn primary">Exportieren</button>
+      <button id="btn-help" class="btn icon" title="Hilfe" aria-label="Hilfe">?</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <button id="btn-new" class="btn primary block">＋ Neue Frage</button>
+        <input id="search" type="search" placeholder="Fragen durchsuchen …" aria-label="Fragen durchsuchen">
+      </div>
+      <ul id="question-list" class="question-list" aria-label="Fragenliste"></ul>
+      <div class="sidebar-bottom">
+        <label class="check"><input type="checkbox" id="check-all"> <span>Alle auswählen</span></label>
+        <span id="list-count" class="muted"></span>
+      </div>
+    </aside>
+
+    <section id="editor" class="editor" aria-live="polite"></section>
+  </main>
+
+  <div id="modal-root"></div>
+  <div id="toast-root" class="toast-root" aria-live="polite"></div>
+
+  <template id="help-template">
+    <div class="help">
+      <h3>So funktioniert es</h3>
+      <ol>
+        <li><strong>Fragen anlegen:</strong> Links auf „Neue Frage“ klicken, Fragetyp wählen, Titel, Fragetext und Antworten eintragen.</li>
+        <li><strong>Automatisch gespeichert:</strong> Alles wird sofort im Speicher deines Browsers abgelegt. Beim nächsten Öffnen der Seite ist alles wieder da – ohne Konto, ohne Server.</li>
+        <li><strong>Exportieren:</strong> Oben rechts „Exportieren“ → <em>Moodle-XML</em> herunterladen.</li>
+        <li><strong>In Moodle importieren:</strong> Im Kurs <em>Mehr → Fragensammlung → Import</em> öffnen, Dateiformat <em>Moodle-XML-Format</em> wählen, Datei hochladen, Import bestätigen.</li>
+        <li><strong>Test erstellen:</strong> Im Kurs eine Aktivität <em>Test</em> anlegen, dann <em>Fragen → Hinzufügen → aus der Fragensammlung</em> und die importierten Fragen auswählen.</li>
+      </ol>
+
+      <h3>Tipps</h3>
+      <ul>
+        <li>Mit den Häkchen in der Liste kannst du eine <strong>Auswahl</strong> treffen und nur diese Fragen exportieren – praktisch, um einen bestimmten Test zusammenzustellen.</li>
+        <li>Mehrere <strong>Kataloge</strong> (z. B. je Kurs oder Thema) legst du oben über „＋“ an. Der Katalogname wird in Moodle zur Kategorie.</li>
+        <li>Fragetexte dürfen einfaches <strong>HTML</strong> enthalten (z. B. <code>&lt;b&gt;fett&lt;/b&gt;</code>, <code>&lt;img src="…"&gt;</code>). Ohne HTML werden Leerzeilen automatisch zu Absätzen.</li>
+        <li>Fragen lassen sich in der Liste per <strong>Ziehen</strong> umsortieren.</li>
+        <li><strong>Sicherung:</strong> Der Browser-Speicher kann durch Löschen der Website-Daten verloren gehen. Lade regelmäßig eine Sicherung (Exportieren → Sicherung) herunter. Über „Importieren“ kannst du sie jederzeit wieder einspielen – auch auf einem anderen Gerät.</li>
+        <li>Bestehende Moodle-Fragensammlungen kannst du als <strong>Moodle-XML</strong> exportieren und hier importieren und weiterbearbeiten.</li>
+      </ul>
+
+      <h3>Formate</h3>
+      <ul>
+        <li><strong>Moodle-XML</strong> – empfohlen, unterstützt alle Fragetypen dieses Tools.</li>
+        <li><strong>GIFT</strong> – einfaches Textformat, unterstützt keine Lückentext-Fragen.</li>
+        <li><strong>Sicherung (JSON)</strong> – nur für dieses Tool, enthält alles inklusive Einstellungen.</li>
+      </ul>
+    </div>
+  </template>
+
+  <script type="module" src="assets/app.js"></script>
+</body>
+</html>

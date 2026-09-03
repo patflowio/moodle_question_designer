@@ -1,0 +1,12 @@
+{
+  "name": "moodle-question-designer",
+  "version": "1.0.0",
+  "description": "Moodle-Fragen im Browser gestalten und als Moodle-XML/GIFT exportieren",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "start": "npx --yes serve ."
+  },
+  "license": "MIT"
+}
